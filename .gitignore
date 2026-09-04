@@ -1,0 +1,20 @@
+# Local environment overrides - never commit real secrets.
+.env
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Docker data (should never be committed)
+.docker-data/
+docs
+postman
+# Maven
+target/
