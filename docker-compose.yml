@@ -327,7 +327,7 @@ services:
       DEAL_SERVICE_URI: http://deal:8085
       PARTICIPATION_SERVICE_URI: http://participation:8086
       INVENTORY_SERVICE_URI: http://inventory:8087
-      ORDER_SERVICE_URI: http://order:8010
+      ORDER_SERVICE_URI: http://order:8081
       PAYMENT_SERVICE_URI: http://payment:8082
       NOTIFICATION_SERVICE_URI: http://notification:8010
       CORS_ORIGIN_DEV: http://localhost:4200
@@ -431,10 +431,11 @@ services:
     container_name: rally-order
     networks: [rally-net]
     ports:
-      - "8010:8010"
-    # NOTE: order currently hardcodes localhost URLs in application.properties -
+      - "8081:8081"
+    # NOTE: order currently hardcodes its DB URL in application.properties -
     # see docs/local-development.md. env vars below apply once converted to env-driven.
     environment:
+      SERVER_PORT: 8081
       JWT_SECRET: ${JWT_SECRET}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
