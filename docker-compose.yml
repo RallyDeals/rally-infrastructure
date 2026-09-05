@@ -499,13 +499,18 @@ services:
     networks: [rally-net]
     ports:
       - "8010:8010"
-    # NOTE: notification hardcodes localhost SMTP/Kafka/port in application.properties.
     environment:
-      spring.mail.host: mailpit
-      spring.mail.port: 1025
+      SERVER_PORT: 8010
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_MAIL_HOST: mailpit
+      SPRING_MAIL_PORT: 1025
+      MAIL_SMTP_AUTH: "false"
+      MAIL_SMTP_STARTTLS_ENABLE: "false"
+      MAIL_FROM: no-reply@rally.local
       OTP_ENCRYPTION_PASSWORD: ${OTP_ENCRYPTION_PASSWORD}
       OTP_ENCRYPTION_SALT: ${OTP_ENCRYPTION_SALT}
+      LOKI_URL: http://loki:3100/loki/api/v1/push
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
     depends_on:
       kafka:
         condition: service_healthy
