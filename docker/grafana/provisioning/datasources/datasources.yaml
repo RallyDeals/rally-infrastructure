@@ -26,4 +26,8 @@ datasources:
         filterBySpanID: false
         tags:
           - key: service.name
+            value: rally-auth
+          - key: service.name
             value: rally-payment
+          - key: service.name
+            value: rally-notification
