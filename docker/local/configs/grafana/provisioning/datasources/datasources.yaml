@@ -31,3 +31,5 @@ datasources:
             value: rally-payment
           - key: service.name
             value: rally-notification
+          - key: service.name
+            value: rally-order
