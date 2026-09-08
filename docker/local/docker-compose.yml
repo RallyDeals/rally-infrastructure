@@ -128,7 +128,7 @@ services:
     ports:
       - "3100:3100"
     volumes:
-      - ./configs/loki/config.yml:/etc/loki/local-config.yaml
+      - ../configs/loki/config.yml:/etc/loki/local-config.yaml
       - loki-data:/loki
     command: -config.file=/etc/loki/local-config.yaml
 
@@ -144,8 +144,8 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./configs/grafana/provisioning:/etc/grafana/provisioning
-      - ./configs/grafana/dashboards:/var/lib/grafana/dashboards
+      - ../configs/grafana/provisioning:/etc/grafana/provisioning
+      - ../configs/grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
       - loki
       - jaeger
