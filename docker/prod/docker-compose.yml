@@ -1,30 +1,21 @@
 # =====================================================================
-# RallyDeals - Monolithic local infrastructure
+# RallyDeals - Production infrastructure + services
 # =====================================================================
-# Single command to run ALL infrastructure + services:
-#   docker compose --env-file .env up -d --build
+# Bring up all RallyDeals containers for production:
+#   docker compose -f docker/prod/docker-compose.yml --env-file docker/prod/.env up -d
 #
-# This is the single source of truth for running the platform locally.
-# It replaces the fragmented per-service docker-compose files. It:
-#   * runs ONE Kafka (+ a lightweight Kafka UI),
-#   * one Postgres container PER service (distinct host ports),
-#   * Redis (gateway rate limiter), Mailpit (SMTP catcher),
-#   * application services:
-#       - gateway, auth, payment, notification pull Jib-built images
-#         (medhatdh/rally-<svc>:latestTEST) - push them first with
-#         `mvn compile jib:build` in each repo
-#       - catalog, deal, inventory build from their sibling repo
+# Includes EVERY container from the API stack:
+#   * Kafka + Kafka UI, Redis, Mailpit,
+#   * Observability (Jaeger, Loki, Grafana), Stripe CLI,
+#   * application services: gateway, auth, payment, catalog, deal,
+#     order, inventory, participation, notification.
 #
-# Services read their config mostly from env vars (see .env.example).
-# NOTE: rally-order and rally-notification still hardcode localhost URLs
-# in their application.properties - see docs/local-development.md before
-# containerizing them.
-#
-# Building catalog/deal requires GitHub Packages access
-# (rally-common / rally-security). Provide GITHUB_ACTOR / GITHUB_TOKEN in .env.
+# Postgres is NOT run here: databases are hosted on Aiven. Set the
+# DB_HOST / DB_PORT / DB_USER / DB_PASSWORD for each service in
+# docker/prod/.env (see docker/prod/.env.example).
 # =====================================================================
 
-name: rallydeals
+name: rallydeals-prod
 
 networks:
   rally-net:
@@ -33,13 +24,6 @@ networks:
 
 volumes:
   kafka-data:
-  auth-db-data:
-  catalog-db-data:
-  deal-db-data:
-  order-db-data:
-  payment-db-data:
-  inventory-db-data:
-  participation-pg-data:
   loki-data:
   grafana-data:
 
@@ -87,7 +71,7 @@ services:
     ports:
       - "9000:8080"
     environment:
-      KAFKA_CLUSTERS_0_NAME: rally-local
+      KAFKA_CLUSTERS_0_NAME: rally-prod
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
       DYNAMIC_CONFIG_ENABLED: "true"
     depends_on:
@@ -115,9 +99,6 @@ services:
       - "8025:8025"
       - "1025:1025"
 
-  # Observability (OpenTelemetry tracing + log aggregation + dashboards).
-  # Configs live under ./docker/ (grafana + loki). Apps export OTLP traces to
-  # jaeger:4318 and push logs to loki:3100.
   jaeger:
     image: jaegertracing/all-in-one:latest
     container_name: rally-jaeger
@@ -138,7 +119,7 @@ services:
     ports:
       - "3100:3100"
     volumes:
-      - ./docker/loki/config.yml:/etc/loki/local-config.yaml
+      - ../local/configs/loki/config.yml:/etc/loki/local-config.yaml
       - loki-data:/loki
     command: -config.file=/etc/loki/local-config.yaml
 
@@ -154,14 +135,12 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./docker/grafana/provisioning:/etc/grafana/provisioning
-      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards
+      - ../local/configs/grafana/provisioning:/etc/grafana/provisioning
+      - ../local/configs/grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
       - loki
       - jaeger
 
-  # Stripe CLI - listens for Stripe events and forwards them to the payment
-  # service on the internal network. Needs STRIPE_API_KEY in .env.
   stripe-cli:
     image: stripe/stripe-cli:v1.19.4
     container_name: rally-stripe-cli
@@ -175,147 +154,12 @@ services:
       payment:
         condition: service_started
 
-  # ---------------- Postgres (one container per DB service) ---------
-
-  # 5430:5432
-  auth-postgres:
-    image: postgres:16-alpine
-    container_name: rally-auth-postgres
-    networks: [rally-net]
-    ports:
-      - "5430:5432"
-    environment:
-      POSTGRES_DB: ${AUTH_DB_NAME:-auth_db}
-      POSTGRES_USER: ${AUTH_DB_USERNAME:-user}
-      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:-password}
-    volumes:
-      - auth-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${AUTH_DB_USERNAME:-user} -d ${AUTH_DB_NAME:-auth_db}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  payment-postgres:
-    image: postgres:16-alpine
-    container_name: rally-payment-postgres
-    networks: [ rally-net ]
-    ports:
-      - "5431:5432"
-    environment:
-      POSTGRES_DB: ${PAYMENT_DB_NAME:-payment_db}
-      POSTGRES_USER: ${PAYMENT_DB_USERNAME:-user}
-      POSTGRES_PASSWORD: ${PAYMENT_DB_PASSWORD:-password}
-    volumes:
-      - payment-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${PAYMENT_DB_USERNAME:-user} -d ${PAYMENT_DB_NAME:-payment_db}" ]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  # 5433:5432
-  catalog-postgres:
-    image: postgres:16-alpine
-    container_name: rally-catalog-postgres
-    networks: [rally-net]
-    ports:
-      - "5433:5432"
-    environment:
-      POSTGRES_DB: ${CATALOG_DB_NAME:-catalog_db}
-      POSTGRES_USER: ${CATALOG_DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${CATALOG_DB_PASSWORD:-postgres}
-    volumes:
-      - catalog-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${CATALOG_DB_USER:-postgres} -d ${CATALOG_DB_NAME:-catalog_db}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  # 5434:5432
-  order-postgres:
-    image: postgres:16-alpine
-    container_name: rally-order-postgres
-    networks: [ rally-net ]
-    ports:
-      - "5434:5432"
-    environment:
-      POSTGRES_DB: order_db
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-    volumes:
-      - order-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U user -d order_db" ]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  # 5435:5432
-  deal-postgres:
-    image: postgres:16-alpine
-    container_name: rally-deal-postgres
-    networks: [rally-net]
-    ports:
-      - "5435:5432"
-    environment:
-      POSTGRES_DB: ${DEAL_DB_NAME:-groupdeal_deals}
-      POSTGRES_USER: ${DEAL_DB_USER:-groupdeal}
-      POSTGRES_PASSWORD: ${DEAL_DB_PASSWORD:-groupdeal}
-    volumes:
-      - deal-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DEAL_DB_USER:-groupdeal} -d ${DEAL_DB_NAME:-groupdeal_deals}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  # 5436:5432
-  inventory-postgres:
-    image: postgres:17-alpine
-    container_name: rally-inventory-postgres
-    networks: [rally-net]
-    ports:
-      - "5436:5432"
-    environment:
-      POSTGRES_DB: ${INVENTORY_DB_NAME:-inventory}
-      POSTGRES_USER: ${INVENTORY_DB_USER:-inventory_user}
-      POSTGRES_PASSWORD: ${INVENTORY_DB_PASSWORD:-inventory_password}
-    volumes:
-      - inventory-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${INVENTORY_DB_USER:-inventory_user} -d ${INVENTORY_DB_NAME:-inventory}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  # 5437:5432
-  participation-postgres:
-    image: postgres:16-alpine
-    container_name: rally-participation-postgres
-    networks: [ rally-net ]
-    environment:
-      POSTGRES_DB: participation_db
-      POSTGRES_USER: participation
-      POSTGRES_PASSWORD: participation
-    ports:
-      - "5437:5432"
-    volumes:
-      - participation-pg-data:/var/lib/postgresql/data
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U participation -d participation_db" ]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   # =================================================================
   # APPLICATION SERVICES
   # =================================================================
 
   # 8080:8080
   gateway:
-    # Loads the Jib-built image (see rally-gateway/pom.xml).
     image: mariamaymann1/rally-gateway:latest
     container_name: rally-gateway
     networks: [rally-net]
@@ -366,11 +210,14 @@ services:
       - "8081:8081"
     environment:
       SERVER_PORT: 8081
-      DB_HOST: order-postgres
-      DB_PORT: 5432
-      DB_NAME: order_db
-      DB_USER: user
-      DB_PASSWORD: password
+      DB_HOST: ${ORDER_DB_HOST}
+      DB_PORT: ${ORDER_DB_PORT}
+      DB_NAME: ${ORDER_DB_NAME}
+      DB_USER: ${ORDER_DB_USERNAME}
+      DB_PASSWORD: ${ORDER_DB_PASSWORD}
+      DB_SCHEMA: order_service
+      DB_SSLMODE: require
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${DB_MAX_POOL_SIZE:-2}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_CONSUMER_GROUP_ID: order-service
       KAFKA_CONSUMER_AUTO_OFFSET_RESET: earliest
@@ -381,14 +228,11 @@ services:
       LOKI_URL: http://loki:3100/loki/api/v1/push
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
-      order-postgres:
-        condition: service_healthy
       kafka:
         condition: service_healthy
 
   # 8082:8082
   payment:
-    # Loads the Jib-built image (see rally-payment/pom.xml).
     image: medhatdh/rally-payment:latest
     container_name: rally-payment
     networks: [ rally-net ]
@@ -396,11 +240,14 @@ services:
       - "8082:8082"
     environment:
       SERVER_PORT: 8082
-      DB_HOST: payment-postgres
-      DB_PORT: 5432
-      DB_NAME: ${PAYMENT_DB_NAME:-payment_db}
-      DB_USERNAME: ${PAYMENT_DB_USERNAME:-user}
-      DB_PASSWORD: ${PAYMENT_DB_PASSWORD:-password}
+      DB_HOST: ${PAYMENT_DB_HOST}
+      DB_PORT: ${PAYMENT_DB_PORT}
+      DB_NAME: ${PAYMENT_DB_NAME}
+      DB_USERNAME: ${PAYMENT_DB_USERNAME}
+      DB_PASSWORD: ${PAYMENT_DB_PASSWORD}
+      DB_SCHEMA: payment
+      DB_SSLMODE: require
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${DB_MAX_POOL_SIZE:-2}
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       STRIPE_API_KEY: ${STRIPE_API_KEY}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
@@ -408,8 +255,6 @@ services:
       LOKI_URL: http://loki:3100/loki/api/v1/push
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
-      payment-postgres:
-        condition: service_healthy
       kafka:
         condition: service_healthy
 
@@ -421,25 +266,24 @@ services:
     ports:
       - "8083:8083"
     environment:
-      DB_HOST: catalog-postgres
-      DB_PORT: 5432
-      DB_NAME: ${CATALOG_DB_NAME:-catalog_db}
-      DB_USER: ${CATALOG_DB_USER:-postgres}
-      DB_PASSWORD: ${CATALOG_DB_PASSWORD:-postgres}
+      DB_HOST: ${CATALOG_DB_HOST}
+      DB_PORT: ${CATALOG_DB_PORT}
+      DB_NAME: ${CATALOG_DB_NAME}
+      DB_USER: ${CATALOG_DB_USER}
+      DB_PASSWORD: ${CATALOG_DB_PASSWORD}
+      DB_SCHEMA: catalog
+      DB_SSLMODE: require
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${DB_MAX_POOL_SIZE:-2}
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       DEAL_SERVICE_URL: http://deal:8085
       STORAGE_ROOT: ./uploads
       SERVER_PORT: 8083
     depends_on:
-      catalog-postgres:
-        condition: service_healthy
       kafka:
         condition: service_healthy
 
   # 8084:8084
   auth:
-    # Loads the Jib-built image (see rally-auth/pom.xml). Build/push with:
-    #   mvn compile jib:build
     image: mariamaymann1/rally-auth:latest
     container_name: rally-auth
     networks: [rally-net]
@@ -447,11 +291,14 @@ services:
       - "8084:8084"
     environment:
       SERVER_PORT: 8084
-      DB_HOST: auth-postgres
-      DB_PORT: 5432
-      DB_NAME: ${AUTH_DB_NAME:-auth_db}
-      DB_USERNAME: ${AUTH_DB_USERNAME:-user}
-      DB_PASSWORD: ${AUTH_DB_PASSWORD:-password}
+      DB_HOST: ${AUTH_DB_HOST}
+      DB_PORT: ${AUTH_DB_PORT}
+      DB_NAME: ${AUTH_DB_NAME}
+      DB_USERNAME: ${AUTH_DB_USERNAME}
+      DB_PASSWORD: ${AUTH_DB_PASSWORD}
+      DB_SCHEMA: auth
+      DB_SSLMODE: require
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${DB_MAX_POOL_SIZE:-2}
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
@@ -463,8 +310,6 @@ services:
       LOKI_URL: http://loki:3100/loki/api/v1/push
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
-      auth-postgres:
-        condition: service_healthy
       kafka:
         condition: service_healthy
 
@@ -476,18 +321,19 @@ services:
     ports:
       - "8085:8085"
     environment:
-      DB_HOST: deal-postgres
-      DB_PORT: 5432
-      DB_NAME: ${DEAL_DB_NAME:-groupdeal_deals}
-      DB_USER: ${DEAL_DB_USER:-groupdeal}
-      DB_PASSWORD: ${DEAL_DB_PASSWORD:-groupdeal}
+      DB_HOST: ${DEAL_DB_HOST}
+      DB_PORT: ${DEAL_DB_PORT}
+      DB_NAME: ${DEAL_DB_NAME}
+      DB_USER: ${DEAL_DB_USER}
+      DB_PASSWORD: ${DEAL_DB_PASSWORD}
+      DB_SCHEMA: deal
+      DB_SSLMODE: require
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${DB_MAX_POOL_SIZE:-2}
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       CATALOG_SERVICE_URL: http://catalog:8083
       INVENTORY_SERVICE_URL: http://inventory:8087
       SERVER_PORT: 8085
     depends_on:
-      deal-postgres:
-        condition: service_healthy
       kafka:
         condition: service_healthy
 
@@ -500,18 +346,19 @@ services:
       - "8086:8086"
     environment:
       SERVER_PORT: 8086
-      DB_HOST: participation-postgres
-      DB_PORT: 5432
-      DB_NAME: participation_db
-      DB_USER: participation
-      DB_PASSWORD: participation
+      DB_HOST: ${PARTICIPATION_DB_HOST}
+      DB_PORT: ${PARTICIPATION_DB_PORT}
+      DB_NAME: ${PARTICIPATION_DB_NAME}
+      DB_USER: ${PARTICIPATION_DB_USER}
+      DB_PASSWORD: ${PARTICIPATION_DB_PASSWORD}
+      DB_SCHEMA: participation
+      DB_SSLMODE: require
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${DB_MAX_POOL_SIZE:-2}
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_CONSUMER_GROUP_ID: participation-service
       KAFKA_CONSUMER_AUTO_OFFSET_RESET: earliest
       RALLY_DEAL_SERVICE_BASE_URL: http://deal:8085
     depends_on:
-      participation-postgres:
-        condition: service_healthy
       kafka:
         condition: service_healthy
 
@@ -523,16 +370,17 @@ services:
     ports:
       - "8087:8087"
     environment:
-      DB_HOST: inventory-postgres
-      DB_PORT: 5432
-      DB_NAME: inventory
-      DB_USER: inventory_user
-      DB_PASSWORD: inventory_password
+      DB_HOST: ${INVENTORY_DB_HOST}
+      DB_PORT: ${INVENTORY_DB_PORT}
+      DB_NAME: ${INVENTORY_DB_NAME}
+      DB_USER: ${INVENTORY_DB_USER}
+      DB_PASSWORD: ${INVENTORY_DB_PASSWORD}
+      DB_SCHEMA: inventory
+      DB_SSLMODE: require
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${DB_MAX_POOL_SIZE:-2}
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SERVER_PORT: 8087
     depends_on:
-      inventory-postgres:
-        condition: service_healthy
       kafka:
         condition: service_healthy
 

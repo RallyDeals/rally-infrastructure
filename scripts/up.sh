@@ -8,8 +8,11 @@ HEREDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$HEREDIR")"
 cd "$ROOT"
 
-if [[ ! -f .env ]]; then
-  echo "Missing .env. Copy .env.example to .env and fill in values first." >&2
+COMPOSE="$ROOT/docker/local/docker-compose.yml"
+ENV_FILE="$ROOT/docker/local/.env"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Missing docker/local/.env. Copy docker/local/.env.example to docker/local/.env and fill in values first." >&2
   exit 1
 fi
 
@@ -18,7 +21,7 @@ if [[ "${1:-}" == "-n" || "${1:-}" == "--no-build" ]]; then
   BUILD=""
 fi
 
-docker compose --env-file .env up -d $BUILD
+docker compose -f "$COMPOSE" --env-file "$ENV_FILE" up -d $BUILD
 
 echo ""
 echo "RallyDeals is starting. Useful endpoints:"

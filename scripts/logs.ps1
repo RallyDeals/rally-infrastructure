@@ -8,10 +8,12 @@ param(
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $here
+$compose = Join-Path $root "docker\local\docker-compose.yml"
+$envFile = Join-Path $root "docker\local\.env"
 Set-Location $root
 
 if ($Service -ne "") {
-    docker compose --env-file .env logs -f $Service
+    docker compose -f $compose --env-file $envFile logs -f $Service
 } else {
-    docker compose --env-file .env logs -f
+    docker compose -f $compose --env-file $envFile logs -f
 }

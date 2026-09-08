@@ -9,10 +9,12 @@ param(
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $here
+$compose = Join-Path $root "docker\local\docker-compose.yml"
+$envFile = Join-Path $root "docker\local\.env"
 Set-Location $root
 
-if (-not (Test-Path ".env")) {
-    Write-Error "Missing .env. Copy .env.example to .env and fill in values first."
+if (-not (Test-Path $envFile)) {
+    Write-Error "Missing docker\local\.env. Copy docker\local\.env.example to docker\local\.env and fill in values first."
     exit 1
 }
 
@@ -21,7 +23,7 @@ if ($NoBuild) {
     $buildArg = @("-d")
 }
 
-docker compose --env-file .env up $buildArg
+docker compose -f $compose --env-file $envFile up $buildArg
 if ($LASTEXITCODE -ne 0) {
     Write-Error "docker compose up failed (exit $LASTEXITCODE)."
     exit $LASTEXITCODE

@@ -9,13 +9,15 @@ param(
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $here
+$compose = Join-Path $root "docker\local\docker-compose.yml"
+$envFile = Join-Path $root "docker\local\.env"
 Set-Location $root
 
-if (-not (Test-Path ".env")) {
-    Write-Warning "No .env found - using default variables for teardown."
+if (-not (Test-Path $envFile)) {
+    Write-Warning "No docker\local\.env found - using default variables for teardown."
 }
 
-$args = @("--env-file", ".env", "down")
+$args = @("-f", $compose, "--env-file", $envFile, "down")
 if ($Volumes) {
     $args += "-v"
 }

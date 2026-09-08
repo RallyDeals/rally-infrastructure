@@ -8,9 +8,12 @@ HEREDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$HEREDIR")"
 cd "$ROOT"
 
+COMPOSE="$ROOT/docker/local/docker-compose.yml"
+ENV_FILE="$ROOT/docker/local/.env"
+
 SERVICE="${1:-}"
 if [[ -n "$SERVICE" ]]; then
-  docker compose --env-file .env logs -f "$SERVICE"
+  docker compose -f "$COMPOSE" --env-file "$ENV_FILE" logs -f "$SERVICE"
 else
-  docker compose --env-file .env logs -f
+  docker compose -f "$COMPOSE" --env-file "$ENV_FILE" logs -f
 fi
