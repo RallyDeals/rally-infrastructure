@@ -35,3 +35,5 @@ datasources:
             value: rally-order
           - key: service.name
             value: rally-participation
+          - key: service.name
+            value: rally-catalog
