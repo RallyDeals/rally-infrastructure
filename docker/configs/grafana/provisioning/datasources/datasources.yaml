@@ -33,3 +33,5 @@ datasources:
             value: rally-notification
           - key: service.name
             value: rally-order
+          - key: service.name
+            value: rally-participation
